@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<zlog>
+
+    <console>
+        <!-- layout
+          date 2016/07/15 xxx
+          time 2016/07/15 11:45:00 xxx
+        -->
+        <layout>time</layout>
+    <!--日志级别 从高到低为 error warning info debug
+    生产一般为info 调试开发使用debug模式-->
+        <level>debug</level>
+    </console>
+
+    <!--日志文件配置
+    parameter｛
+    path:日志文件全路径包涵文件名
+    mode:日志记录模式 cover覆盖 appender 追加 dailyRolling 按照日期生成日志文件
+    layout description ｛格式化输出 用|分割｝
+    parameter｛
+    date: 本地日期 
+    time：本地时间 
+    second：秒 
+    utc：国标时间 此选项需要设置date或者time
+    fileName：原文件名带行号 
+    fullpath:文件名全路径带行号
+    ｝
+     example ｛<layout>date|fileName</layout>｝
+    <!--日志级别 从高到低为 error warning info debug
+    生产一般为info 调试开发使用debug模式-->
+
+    <file>
+        <layout>date|fileName</layout>
+        <path>/Users/Janly/Desktop/RPM.log</path>
+        <mode>dailyRolling</mode>
+        <level>debug</level>
+    </file>
+
+</zlog>
