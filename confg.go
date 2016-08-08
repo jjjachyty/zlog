@@ -26,7 +26,7 @@ type ConsoleXMLSRT struct {
 }
 
 //ZlogConfig var
-var ZlogConfig = LogXMLSRT{ConsoleXMLSRT{"date|time|fileName", "error"}, FileXMLSRT{"date|time|fileName", "zlog.log", "cover", "debug"}}
+var ZlogConfig = LogXMLSRT{ConsoleXMLSRT{"date|time|fileName", "debug"}, FileXMLSRT{"date|time|fileName", "zlog.log", "cover", "debug"}}
 
 //readXML读取XML配置
 func readXML() {

@@ -3,7 +3,6 @@ package zlog
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"strconv"
@@ -18,7 +17,10 @@ import (
 //var ConsoleLoger = new(log.Logger)
 
 //StructLoger var 结构化日志
-var StructLoger = new(log.Logger)
+//var StructLoger = new(log.Logger)
+
+//Logfile var 日志文件
+var Logfile *os.File
 
 //ErrorWithCode func 带错误号码的输出错误日志
 //code 配置文件定义的编号 err 为系统错误，如为自定义则为nil arry 翻译数组填充值
@@ -113,8 +115,11 @@ func recordLogsWithCode(leve int, code string, arry []string, err error) {
 	noteConsoleLogs.WriteString(logs)
 	//控制台打印
 	writeConsoleLog(leve, noteConsoleLogs.String(), err)
-	//写入日志文件
-	writeFileLog(leve, noteFileLogs.String(), err)
+	if nil != Logfile {
+		//写入日志文件
+		writeFileLog(leve, noteFileLogs.String(), err)
+	}
+
 }
 
 //记录非code方式日志
@@ -129,8 +134,11 @@ func recordLog(leve int, logs string, err error) {
 	fileLog.WriteString(logs)
 	//控制台打印
 	writeConsoleLog(leve, consoleLog.String(), err)
-	//写入日志文件
-	writeFileLog(leve, fileLog.String(), err)
+
+	if nil != Logfile {
+		//写入日志文件
+		writeFileLog(leve, fileLog.String(), err)
+	}
 
 }
 
@@ -146,8 +154,11 @@ func recordLogf(leve int, logs string, err error, vars ...interface{}) {
 	fileLog.WriteString(logs)
 	//控制台打印
 	writeConsoleLogf(leve, consoleLog.String(), err, vars...)
-	//写入日志文件
-	writeFileLogf(leve, fileLog.String(), err, vars...)
+
+	if nil != Logfile {
+		//写入日志文件
+		writeFileLogf(leve, fileLog.String(), err, vars...)
+	}
 
 }
 
@@ -191,18 +202,18 @@ func writeFileLog(level int, logs string, errs error) {
 	switch ZlogConfig.File.Level {
 	case "error": //日志级别为错误，只打印错误级别的日志
 		if 4 == level {
-			outputFileLog(logs, errs)
+			outputFileLogf(logs, errs)
 		}
 	case "warning":
 		if 3 == level || 4 == level {
-			outputFileLog(logs, errs)
+			outputFileLogf(logs, errs)
 		}
 	case "info":
 		if 3 == level || 4 == level || 2 == level {
-			outputFileLog(logs, errs)
+			outputFileLogf(logs, errs)
 		}
 	default:
-		outputFileLog(logs, errs)
+		outputFileLogf(logs, errs)
 	}
 
 }
@@ -282,18 +293,18 @@ func outputConsoleLogf(logs string, errs error, vars ...interface{}) {
 }
 func outputConsoleLog(logs string, errs error) {
 
-	fmt.Println(getFormatHeader(), logs)
+	fmt.Println(getFormatHeader(ZlogConfig.Console.Layout), logs)
 	if errs != nil {
 		fmt.Println(errs.Error())
 	}
 }
-func getFormatHeader() string {
+func getFormatHeader(layout string) string {
 	var header bytes.Buffer
 
 	var times = time.Now()
 
-	layouts := strings.Split(ZlogConfig.Console.Layout, "|")
-	_, file, line, _ := runtime.Caller(2)
+	layouts := strings.Split(layout, "|")
+	_, file, line, _ := runtime.Caller(5)
 
 	for _, v := range layouts {
 		switch v {
@@ -307,28 +318,36 @@ func getFormatHeader() string {
 		case "fileName":
 			header.WriteString(" ")
 			header.WriteString(strings.Split(file, "/")[strings.Count(file, "/")])
+			header.WriteString(":")
+			header.WriteString(strconv.Itoa(line))
 		case "fullpath":
 			header.WriteString(file)
-
+			header.WriteString(":")
+			header.WriteString(strconv.Itoa(line))
 		}
 
 	}
-	header.WriteString(":")
-	header.WriteString(strconv.Itoa(line))
+
 	return header.String()
 }
 func outputFileLogf(logs string, errs error, vars ...interface{}) {
-	log.Printf(logs, vars...)
+	var logsBuff bytes.Buffer
+	logsBuff.WriteString(getFormatHeader(ZlogConfig.File.Layout))
+	logsBuff.WriteString(logs)
+	logsBuff.WriteString("\n")
+	fmt.Fprintf(Logfile, logsBuff.String(), vars...)
+
 	if errs != nil {
-		log.Println(errs.Error())
+		fmt.Fprintln(Logfile, errs.Error())
 	}
 }
-func outputFileLog(logs string, errs error) {
-	log.Output(0, logs)
-	if errs != nil {
-		log.Println(errs.Error())
-	}
-}
+
+// func outputFileLog(logs string, errs error) {
+// 	fmt.Sprintln(logs)
+// 	if errs != nil {
+// 		log.Println(errs.Error())
+// 	}
+// }
 
 func fileHandle() {
 
@@ -360,41 +379,54 @@ func fileHandle() {
 }
 
 func createLogFile() {
-	var logFlag = log.LstdFlags
+
 	var fileMode = os.O_APPEND
 	var erros bytes.Buffer
+
+	var err error
 	if "cover" == ZlogConfig.File.Mode { //如果为覆盖
 		fileMode = os.O_TRUNC
 	}
-	logfile, err := os.OpenFile(ZlogConfig.File.Path, os.O_CREATE|os.O_RDWR|fileMode, 0666)
+
+	_, err = os.Stat(ZlogConfig.File.Path) //判断文件是否存在
+
 	if err != nil {
-		erros.WriteString(" zlog日志文件 ")
-		erros.WriteString(logfile.Name())
-		erros.WriteString(" 创建失败,无法使用文件记录")
+		erros.WriteString("zlog日志文件 ")
+		erros.WriteString(ZlogConfig.File.Path)
+		erros.WriteString(" 创建失败,无法使用此文件记录")
 		Error(erros.String(), err)
-		//os.Exit(1)
-	}
-	log.SetOutput(logfile)
-	layouts := strings.Split(ZlogConfig.File.Layout, "|")
-	for _, v := range layouts {
-		switch v {
-		case "date":
-			logFlag = log.Ldate | logFlag
-		case "time":
-			logFlag = log.Ltime | logFlag
-		case "utc":
-			logFlag = log.LUTC | logFlag
-		case "fileName":
-			logFlag = log.Lshortfile | logFlag
-		case "fullpath":
-			logFlag = log.Llongfile | logFlag
 
+		Info("zlog 将在项目根路径下创建zlog.log文件用于纪录日志信息", nil)
+		ZlogConfig.File.Path = "zlog.log"
+		Logfile, err = os.OpenFile(ZlogConfig.File.Path, os.O_CREATE|os.O_RDWR|fileMode, 0666)
+
+		if err != nil {
+			Error("zlog 无法创建zlog.log文件用于纪录日志信息", nil)
+			//os.Exit(1)
 		}
-
 	}
 
-	log.SetFlags(logFlag)
+	// layouts := strings.Split(ZlogConfig.File.Layout, "|")
+	// for _, v := range layouts {
+	// 	switch v {
+	// 	case "date":
+	// 		logFlag = log.Ldate | logFlag
+	// 	case "time":
+	// 		logFlag = log.Ltime | logFlag
+	// 	case "utc":
+	// 		logFlag = log.LUTC | logFlag
+	// 	case "fileName":
+	// 		logFlag = log.Lshortfile | logFlag
+	// 	case "fullpath":
+	// 		logFlag = log.Llongfile | logFlag
 
+	// 	}
+
+	// }
+
+	// log.SetFlags(logFlag)
+
+	//Info("zlog 将在项目根路径下创建zlog.log文件用于纪录日志信息", nil)
 }
 
 func init() {
