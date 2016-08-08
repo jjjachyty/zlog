@@ -282,9 +282,13 @@ func writeConsoleLogf(level int, logs string, errs error, vars ...interface{}) {
 }
 
 func outputConsoleLogf(logs string, errs error, vars ...interface{}) {
+	var logsLn bytes.Buffer
+	logsLn.WriteString(getFormatHeader(ZlogConfig.Console.Layout))
+	logsLn.WriteString(logs)
+	logsLn.WriteString("\n")
 
-	_, err := fmt.Printf(logs, vars...)
-	if err == nil {
+	_, err := fmt.Printf(logsLn.String(), vars...)
+	if err != nil {
 		fmt.Println(err)
 	}
 	if errs != nil {
@@ -310,16 +314,19 @@ func getFormatHeader(layout string) string {
 		switch v {
 		case "date":
 			header.WriteString(times.Format("2006/01/02"))
-		case "time":
 			header.WriteString(" ")
+		case "time":
 			header.WriteString(times.Format("15:04:05"))
+			header.WriteString(" ")
 		case "utc":
 			header.WriteString(times.UTC().Format("2006/01/02 15:04:05"))
-		case "fileName":
 			header.WriteString(" ")
+		case "fileName":
+
 			header.WriteString(strings.Split(file, "/")[strings.Count(file, "/")])
 			header.WriteString(":")
 			header.WriteString(strconv.Itoa(line))
+			header.WriteString(" ")
 		case "fullpath":
 			header.WriteString(file)
 			header.WriteString(":")
@@ -388,13 +395,13 @@ func createLogFile() {
 		fileMode = os.O_TRUNC
 	}
 
-	_, err = os.Stat(ZlogConfig.File.Path) //判断文件是否存在
-
+	//_, err = os.Stat(ZlogConfig.File.Path) //判断文件是否存在
+	Logfile, err = os.OpenFile(ZlogConfig.File.Path, os.O_CREATE|os.O_RDWR|fileMode, 0666)
 	if err != nil {
 		erros.WriteString("zlog日志文件 ")
 		erros.WriteString(ZlogConfig.File.Path)
 		erros.WriteString(" 创建失败,无法使用此文件记录")
-		Error(erros.String(), err)
+		Error(erros.String(), nil)
 
 		Info("zlog 将在项目根路径下创建zlog.log文件用于纪录日志信息", nil)
 		ZlogConfig.File.Path = "zlog.log"
@@ -405,7 +412,7 @@ func createLogFile() {
 			//os.Exit(1)
 		}
 	}
-
+	Infof("zlog 日志文件地址为%q", nil, ZlogConfig.File.Path)
 	// layouts := strings.Split(ZlogConfig.File.Layout, "|")
 	// for _, v := range layouts {
 	// 	switch v {
