@@ -26,14 +26,19 @@
     fullpath:文件名全路径带行号
     ｝
      example ｛<layout>date|fileName</layout>｝
-    <!--日志级别 从高到低为 error warning info debug
+    日志级别 从高到低为 error warning info debug
     生产一般为info 调试开发使用debug模式-->
 
-    <file>
+    <sysFile>
         <layout>date|fileName</layout>
-        <path>/Users/Janly/Desktop/RPM.log</path>
+        <path>/Users/Janly/Desktop/RPM1.log</path>
+        <name>RPM.log</name>
         <mode>dailyRolling</mode>
         <level>debug</level>
-    </file>
+    </sysFile>
+    <appFile>
+        <path>/Users/Janly/Desktop/RPM2.log</path>
+        <mode>dailyRolling</mode>
+     </appFile>
 
 </zlog>

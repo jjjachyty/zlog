@@ -2,6 +2,7 @@ package zlog
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -16,11 +17,36 @@ import (
 //ConsoleLoger var 非结构化日志
 //var ConsoleLoger = new(log.Logger)
 
-//StructLoger var 结构化日志
-//var StructLoger = new(log.Logger)
+//AppLogFile var 结构化日志
+var AppLogFile *os.File
 
-//Logfile var 日志文件
-var Logfile *os.File
+//Action type
+type Action int
+
+const (
+	//SELECT action
+	SELECT Action = 1 << iota
+	//UPDATE action
+	UPDATE
+	//ADD action
+	ADD
+	//DELETE action
+	DELETE
+)
+
+//SysLogFile var 日志文件
+var SysLogFile *os.File
+
+//AppLoger var 结构化日志
+type AppLoger struct {
+	OpTime   time.Time   //操作时间
+	Method   string      //操作方法
+	Action   string      //操作类型 select update add edit
+	UserName string      //操作人
+	OldData  interface{} //旧数据，此选项只用于update
+	NewData  interface{} //目前最新数据
+	Explan   string      //备注说明
+}
 
 //ErrorWithCode func 带错误号码的输出错误日志
 //code 配置文件定义的编号 err 为系统错误，如为自定义则为nil arry 翻译数组填充值
@@ -31,7 +57,7 @@ func ErrorWithCode(code string, arry []string, err error) {
 //Error func 输出错误日志
 //logs 输出日志 err 系统原始错误日志
 func Error(logs string, err error) {
-	recordLog(4, logs, err)
+	recordLogf(4, logs, err)
 }
 
 //Errorf func 格式化输出错误日志
@@ -49,7 +75,7 @@ func WarningWithCode(code string, err error, arry []string) {
 //Warning func  输出错误日志
 //logs 输出日志 err 系统原始错误日志
 func Warning(logs string, err error) {
-	recordLog(3, logs, err)
+	recordLogf(3, logs, err)
 }
 
 //Warningf func 格式化输出错误日志
@@ -67,7 +93,7 @@ func InfoWithCode(code string, err error, arry []string) {
 //Info func  输出错误日志
 //logs 输出日志 err 系统原始错误日志
 func Info(logs string, err error) {
-	recordLog(2, logs, err)
+	recordLogf(2, logs, err)
 }
 
 //Infof func  格式化方式输出错误日志
@@ -79,7 +105,7 @@ func Infof(logs string, err error, vars ...interface{}) {
 //Debug func 输出错误日志
 //code 配置文件定义的编号 err 为系统错误，如为自定义则为nil arry 翻译数组填充值
 func Debug(logs string, err error) {
-	recordLog(1, logs, err)
+	recordLogf(1, logs, err)
 }
 
 //Debugf func 输出错误日志
@@ -115,32 +141,32 @@ func recordLogsWithCode(leve int, code string, arry []string, err error) {
 	noteConsoleLogs.WriteString(logs)
 	//控制台打印
 	writeConsoleLog(leve, noteConsoleLogs.String(), err)
-	if nil != Logfile {
+	if nil != SysLogFile {
 		//写入日志文件
-		writeFileLog(leve, noteFileLogs.String(), err)
+		writeSysFileLog(leve, noteFileLogs.String(), err)
 	}
 
 }
 
 //记录非code方式日志
-func recordLog(leve int, logs string, err error) {
-	var fileLog bytes.Buffer
-	var consoleLog bytes.Buffer
-	noteFile, noteConsole := noteHandle(leve, "")
-	consoleLog.WriteString(noteConsole)
-	consoleLog.WriteString(logs)
+// func recordLog(leve int, logs string, err error) {
+// 	var fileLog bytes.Buffer
+// 	var consoleLog bytes.Buffer
+// 	noteFile, noteConsole := noteHandle(leve, "")
+// 	consoleLog.WriteString(noteConsole)
+// 	consoleLog.WriteString(logs)
 
-	fileLog.WriteString(noteFile)
-	fileLog.WriteString(logs)
-	//控制台打印
-	writeConsoleLog(leve, consoleLog.String(), err)
+// 	fileLog.WriteString(noteFile)
+// 	fileLog.WriteString(logs)
+// 	//控制台打印
+// 	writeConsoleLog(leve, consoleLog.String(), err)
 
-	if nil != Logfile {
-		//写入日志文件
-		writeFileLog(leve, fileLog.String(), err)
-	}
+// 	if nil != SysLogFile {
+// 		//写入日志文件
+// 		writeSysFileLog(leve, fileLog.String(), err)
+// 	}
 
-}
+// }
 
 //记录非code 格式化方式日志
 func recordLogf(leve int, logs string, err error, vars ...interface{}) {
@@ -155,7 +181,7 @@ func recordLogf(leve int, logs string, err error, vars ...interface{}) {
 	//控制台打印
 	writeConsoleLogf(leve, consoleLog.String(), err, vars...)
 
-	if nil != Logfile {
+	if nil != SysLogFile {
 		//写入日志文件
 		writeFileLogf(leve, fileLog.String(), err, vars...)
 	}
@@ -194,12 +220,13 @@ func noteHandle(leve int, code string) (string, string) {
 	noteConsole.WriteString(code)
 	noteConsole.WriteString(normalColour)
 	noteConsole.WriteString("]")
+
 	return noteFile.String(), noteConsole.String()
 }
 
 //writeLog func 日志输出处理
-func writeFileLog(level int, logs string, errs error) {
-	switch ZlogConfig.File.Level {
+func writeSysFileLog(level int, logs string, errs error) {
+	switch ZlogConfig.SysFile.Level {
 	case "error": //日志级别为错误，只打印错误级别的日志
 		if 4 == level {
 			outputFileLogf(logs, errs)
@@ -223,25 +250,25 @@ func writeConsoleLog(level int, logs string, errs error) {
 	switch ZlogConfig.Console.Level {
 	case "error": //日志级别为错误，只打印错误级别的日志
 		if 4 == level {
-			outputConsoleLog(logs, errs)
+			outputConsoleLogf(logs, errs)
 		}
 	case "warning":
 		if 3 == level || 4 == level {
-			outputConsoleLog(logs, errs)
+			outputConsoleLogf(logs, errs)
 		}
 	case "info":
 		if 3 == level || 4 == level || 2 == level {
-			outputConsoleLog(logs, errs)
+			outputConsoleLogf(logs, errs)
 		}
 	default:
-		outputConsoleLog(logs, errs)
+		outputConsoleLogf(logs, errs)
 	}
 
 }
 
 //writeLog func 日志输出处理
 func writeFileLogf(level int, logs string, errs error, vars ...interface{}) {
-	switch ZlogConfig.File.Level {
+	switch ZlogConfig.SysFile.Level {
 	case "error": //日志级别为错误，只打印错误级别的日志
 		if 4 == level {
 			outputFileLogf(logs, errs, vars...)
@@ -295,13 +322,14 @@ func outputConsoleLogf(logs string, errs error, vars ...interface{}) {
 		fmt.Println(errs.Error())
 	}
 }
-func outputConsoleLog(logs string, errs error) {
 
-	fmt.Println(getFormatHeader(ZlogConfig.Console.Layout), logs)
-	if errs != nil {
-		fmt.Println(errs.Error())
-	}
-}
+// func outputConsoleLog(logs string, errs error) {
+
+// 	fmt.Println(getFormatHeader(ZlogConfig.Console.Layout), logs)
+// 	if errs != nil {
+// 		fmt.Println(errs.Error())
+// 	}
+// }
 func getFormatHeader(layout string) string {
 	var header bytes.Buffer
 
@@ -339,13 +367,13 @@ func getFormatHeader(layout string) string {
 }
 func outputFileLogf(logs string, errs error, vars ...interface{}) {
 	var logsBuff bytes.Buffer
-	logsBuff.WriteString(getFormatHeader(ZlogConfig.File.Layout))
+	logsBuff.WriteString(getFormatHeader(ZlogConfig.SysFile.Layout))
 	logsBuff.WriteString(logs)
 	logsBuff.WriteString("\n")
-	fmt.Fprintf(Logfile, logsBuff.String(), vars...)
+	fmt.Fprintf(SysLogFile, logsBuff.String(), vars...)
 
 	if errs != nil {
-		fmt.Fprintln(Logfile, errs.Error())
+		fmt.Fprintln(SysLogFile, errs.Error())
 	}
 }
 
@@ -358,82 +386,154 @@ func outputFileLogf(logs string, errs error, vars ...interface{}) {
 
 func fileHandle() {
 
-	if 0 != len(ZlogConfig.File.Path) {
-		createLogFile()
-		if "dailyRolling" == ZlogConfig.File.Mode {
+	if 0 != len(ZlogConfig.SysFile.Path) {
+		SysLogFile = createFile("Sys", ZlogConfig.SysFile.Mode, ZlogConfig.SysFile.Path)
+		if "dailyRolling" == ZlogConfig.SysFile.Mode {
 			DailyRollingLogs(func() {
 
 				nowTime := time.Now().Format("2006-01-02")
-				_, err := os.Stat(ZlogConfig.File.Path) //判断文件是否存在
+				_, err := os.Stat(ZlogConfig.SysFile.Path) //判断文件是否存在
 
 				if err == nil {
-					err := os.Rename(ZlogConfig.File.Path, strings.Replace(ZlogConfig.File.Path, ".", nowTime+".", -1))
+					err := os.Rename(ZlogConfig.SysFile.Path, strings.Replace(ZlogConfig.SysFile.Path, ".", nowTime+".", -1))
 					if err == nil {
-						createLogFile()
+						SysLogFile = createFile("Sys", ZlogConfig.SysFile.Mode, ZlogConfig.SysFile.Path)
 					} else {
 						Error("日志备份失败", err)
 					}
 
 				} else {
-					createLogFile()
-					Error("日志文件丢失,系统自动创建日志", nil)
+					SysLogFile = createFile("Sys", ZlogConfig.SysFile.Mode, ZlogConfig.SysFile.Path)
+					Error("zlog 日志文件丢失,系统自动创建日志", nil)
 				}
 
 			})
 		}
+	}
+	if 0 != len(ZlogConfig.AppFile.Path) {
+		AppLogFile = createFile("App", ZlogConfig.AppFile.Mode, ZlogConfig.AppFile.Path)
+		if "dailyRolling" == ZlogConfig.AppFile.Mode {
+			DailyRollingLogs(func() {
 
+				nowTime := time.Now().Format("2006-01-02")
+				_, err := os.Stat(ZlogConfig.AppFile.Path) //判断文件是否存在
+
+				if err == nil {
+					err := os.Rename(ZlogConfig.AppFile.Path, strings.Replace(ZlogConfig.AppFile.Path, ".", nowTime+".", -1))
+					if err == nil {
+						AppLogFile = createFile("App", ZlogConfig.AppFile.Mode, ZlogConfig.AppFile.Path)
+					} else {
+						Error("zlog App 日志备份失败", err)
+					}
+
+				} else {
+					AppLogFile = createFile("App", ZlogConfig.AppFile.Mode, ZlogConfig.AppFile.Path)
+					Error("zlog App 日志文件丢失,系统自动创建日志", nil)
+				}
+
+			})
+		}
 	}
 }
 
-func createLogFile() {
+//AppOperateLog func
+//UserName 操作人
+//method  方法名
+//action   方法类型
+//newData  新数据
+//oldData  旧数据
+//explan   说明
+func AppOperateLog(userName string, method string, action Action, newData interface{}, oldData interface{}, explan string) {
+	var conslogsBuff bytes.Buffer
+	var logsBuff bytes.Buffer
+	logsBuff.WriteString("{\"OpTime\":\"")
+	logsBuff.WriteString(time.Now().String())
+	logsBuff.WriteString("\",\"UserName\":\"")
+	logsBuff.WriteString(userName)
+	logsBuff.WriteString("\",\"Action\":\"")
+	switch action {
+	case 1:
+		logsBuff.WriteString("select\",")
+	case 2:
+		logsBuff.WriteString("update\",")
+	case 3:
+		logsBuff.WriteString("add\",")
+	case 4:
+		logsBuff.WriteString("delete\",")
+	}
+	if new, err := json.Marshal(newData); err == nil {
+		logsBuff.WriteString("\"NewData\":")
+		logsBuff.WriteString(string(new))
+	} else {
+		fmt.Fprintln(SysLogFile, err.Error())
+	}
+	if old, err := json.Marshal(oldData); err == nil {
+		logsBuff.WriteString(",\"OldData\":")
+		logsBuff.WriteString(string(old))
+	} else {
+		fmt.Fprintln(SysLogFile, err.Error())
+	}
+	logsBuff.WriteString(",\"Explan\":\"")
+	logsBuff.WriteString(explan)
+	logsBuff.WriteString("\"}")
+	logsBuff.WriteString("\n")
+	fmt.Fprintf(AppLogFile, logsBuff.String())
+	conslogsBuff.WriteString("zlog App 操作日志:")
+	conslogsBuff.Write(logsBuff.Bytes())
+	fmt.Print(conslogsBuff.String())
+}
 
+// //AppOperateLog func产品日志
+// func AppOperateLog(applog AppLoger) {
+// 	var conslogsBuff bytes.Buffer
+// 	var logsBuff bytes.Buffer
+// 	applog.OpTime = time.Now()
+// 	if b, err := json.Marshal(applog); err == nil {
+// 		logsBuff.WriteString(string(b))
+// 	} else {
+// 		fmt.Fprintln(SysLogFile, err.Error())
+// 	}
+// 	logsBuff.WriteString("\n")
+// 	fmt.Fprintf(AppLogFile, logsBuff.String())
+// 	conslogsBuff.WriteString("zlog App 操作日志:")
+// 	conslogsBuff.Write(logsBuff.Bytes())
+// 	fmt.Print(conslogsBuff.String())
+
+// }
+
+func createFile(typ string, model string, path string) *os.File {
 	var fileMode = os.O_APPEND
 	var erros bytes.Buffer
 
-	var err error
-	if "cover" == ZlogConfig.File.Mode { //如果为覆盖
+	if "cover" == model { //如果为覆盖
 		fileMode = os.O_TRUNC
 	}
 
-	//_, err = os.Stat(ZlogConfig.File.Path) //判断文件是否存在
-	Logfile, err = os.OpenFile(ZlogConfig.File.Path, os.O_CREATE|os.O_RDWR|fileMode, 0666)
-	if err != nil {
-		erros.WriteString("zlog日志文件 ")
-		erros.WriteString(ZlogConfig.File.Path)
-		erros.WriteString(" 创建失败,无法使用此文件记录")
-		Error(erros.String(), nil)
+	//Infof("zlog %s 日志文件地址为%q", nil, typ, path)
 
-		Info("zlog 将在项目根路径下创建zlog.log文件用于纪录日志信息", nil)
-		ZlogConfig.File.Path = "zlog.log"
-		Logfile, err = os.OpenFile(ZlogConfig.File.Path, os.O_CREATE|os.O_RDWR|fileMode, 0666)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|fileMode, 0666)
+	if err != nil {
+		erros.WriteString("zlog %s 日志文件 ")
+		erros.WriteString(path)
+		erros.WriteString(" 创建失败,无法使用此文件记录")
+		Errorf(erros.String(), nil, typ)
+		if "App" == typ {
+			path = "zlogApp.log"
+		} else {
+			path = "zlogSys.log"
+		}
+		Infof("zlog 将在项目根路径下创建 %s 日志文件用于纪录日志信息", nil, typ)
+
+		file, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR|fileMode, 0666)
 
 		if err != nil {
-			Error("zlog 无法创建zlog.log文件用于纪录日志信息", nil)
+			Errorf("zlog 无法创建 %s 日志文件用于纪录日志信息", nil, typ)
 			//os.Exit(1)
 		}
+
+		//Infof("zlog %s 日志文件地址为 %q", nil, typ, path)
 	}
-	Infof("zlog 日志文件地址为%q", nil, ZlogConfig.File.Path)
-	// layouts := strings.Split(ZlogConfig.File.Layout, "|")
-	// for _, v := range layouts {
-	// 	switch v {
-	// 	case "date":
-	// 		logFlag = log.Ldate | logFlag
-	// 	case "time":
-	// 		logFlag = log.Ltime | logFlag
-	// 	case "utc":
-	// 		logFlag = log.LUTC | logFlag
-	// 	case "fileName":
-	// 		logFlag = log.Lshortfile | logFlag
-	// 	case "fullpath":
-	// 		logFlag = log.Llongfile | logFlag
-
-	// 	}
-
-	// }
-
-	// log.SetFlags(logFlag)
-
-	//Info("zlog 将在项目根路径下创建zlog.log文件用于纪录日志信息", nil)
+	return file
 }
 
 func init() {
@@ -441,4 +541,8 @@ func init() {
 	fileHandle()
 	readCode()
 	Info("zlog 启动成功，如有任何疑问请提交问题至http://git.pccqcpa.com.cn/components/zlog.git", nil)
+}
+
+func main() {
+	ErrorWithCode("xxx", []string{"Z", "9"}, nil)
 }

@@ -31,6 +31,6 @@ func readCode() {
 		}
 
 	} else {
-		Error(" 无法在项目目录中发现conf/zlog/code.ini文件,..WithCode方法将打印原始信息。", err)
+		Warning("无法在项目目录中发现conf/zlog/code.ini文件,..WithCode方法将打印原始信息。", nil)
 	}
 }
